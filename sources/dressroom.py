@@ -104,15 +104,32 @@ class ActiveUsersAPI:
 class DressRoom:
     """ Движок переодевалки """
 
+    # Идентификатор игрового бота
+    GAME_BOT_ID = -182985865
+
     def __init__(self, token: str, bagid: str, sets: dict):
         """ Конструктор """
+        self.token = token
+        self.bagid = bagid
         self.session = VkApi(token=token)
         self.longpoll = VkLongPoll(self.session)
         self.activusers = ActiveUsersAPI(bagid)
         self.event: Optional[Event] = None
-        self.reg_set = self.activusers.compile(r"^/сет(\d+)")
+        self.reg_set = self.activusers.compile(r"^/сет (\w+)")
         self.sets = sets
         self.run()
+
+    def send(self, text: str, channel: int):
+        """ Отправка сообщения """
+        tmp_params = {
+            'peer_id': channel,
+            'message': text,
+            'random_id': 0
+        }
+        try:
+            self.session.method('messages.send', tmp_params)
+        except Exception as e:
+            print(e)
 
     def run(self):
         """ Запуск жизненного цикла """
@@ -120,25 +137,27 @@ class DressRoom:
         while True:
             try:
                 for self.event in self.longpoll.check():
-                    if self.event.type == VkEventType.MESSAGE_NEW:
+                    if (self.event.type == VkEventType.MESSAGE_NEW) and self.event.from_me and self.event.peer_id == self.GAME_BOT_ID:
                         self.check()
             except Exception as e:
-                print("Read poll failed %s %s" % (e, traceback.format_exc().replace("\n", " ")))
+                print("Read trade failed %s %s" % (e, traceback.format_exc().replace("\n", " ")))
                 time.sleep(3)
 
     def check(self):
-        """ Проверка текущего сообщения торговца """
+        """ Проверка текущего сообщения"""
         tmp_match = self.reg_set.match(self.event.message)
         if tmp_match:
-            self.dress(int(tmp_match[1]))
+            self.send(" Применяю сет #" + tmp_match[1], self.GAME_BOT_ID)
+            self.dress(tmp_match[1])
+            self.send("> Готово", self.GAME_BOT_ID)
 
-    def dress(self, setnum: int):
+    def dress(self, setnum: str):
         """ Использование предметов сета """
-        print(" accepted set #%d" % setnum)
+        if setnum not in self.sets:
+            return self.send("< Неизвестный сет", self.GAME_BOT_ID)
         for tmp_item in self.sets[setnum]:
             self.activusers.useitem(tmp_item[0], tmp_item[1])
             time.sleep(1)
-        print("> done")
 
 
 DressRoom("TOKEN",
